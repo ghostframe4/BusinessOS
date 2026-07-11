@@ -1,0 +1,129 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * BusinessOS — Design "Flux": canvas verde-limão, sidebar escura flutuante,
+ * cards brancos bem arredondados, acentos limão (brand) + lavanda (lavender),
+ * tipografia grande e pesada. Tokens abaixo são a fonte única de cor/raio.
+ */
+@layer base {
+  :root {
+    --background: 74 52% 86%; /* canvas verde-limão suave (página) */
+    --foreground: 240 6% 10%;
+
+    --content: 74 52% 86%; /* área de conteúdo acompanha o canvas limão */
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 6% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 6% 10%;
+
+    --primary: 240 6% 10%; /* charcoal forte: botões escuros, cards escuros */
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 0 0% 100%; /* superfícies brancas sobre o canvas limão */
+    --secondary-foreground: 240 6% 10%;
+
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;
+
+    --accent: 240 5% 96%; /* hover neutro */
+    --accent-foreground: 240 6% 10%;
+
+    /* Acento de marca — limão (estados ativos, CTAs, badges positivos) */
+    --brand: 73 78% 61%;
+    --brand-foreground: 240 6% 10%;
+    --brand-muted: 73 72% 90%; /* fundo limão suave (badges +5% / pills) */
+
+    /* Acento secundário — lavanda (decorativo / dados) */
+    --lavender: 255 60% 78%;
+    --lavender-foreground: 240 6% 10%;
+    --lavender-muted: 255 60% 93%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 73 78% 55%; /* anel de foco: limão */
+
+    --radius: 0.875rem; /* 14px base; cards usam rounded-3xl, pills rounded-full */
+
+    /* Tokens da sidebar escura flutuante */
+    --sidebar: 240 6% 9%;
+    --sidebar-foreground: 0 0% 96%;
+    --sidebar-muted: 240 5% 64%; /* texto de nav inativo */
+    --sidebar-accent: 0 0% 100%; /* fundo da pill ativa */
+    --sidebar-accent-foreground: 240 6% 10%;
+    --sidebar-border: 240 5% 18%;
+
+    /* Tokens estruturais do BusinessOS (não-shadcn) */
+    --sidebar-width: 17rem; /* 272px */
+    --sidebar-width-collapsed: 4.5rem;
+    --content-max: 82rem;
+  }
+
+  .dark {
+    --background: 240 6% 8%;
+    --foreground: 0 0% 96%;
+
+    --content: 240 6% 8%;
+
+    --card: 240 5% 12%;
+    --card-foreground: 0 0% 96%;
+
+    --popover: 240 5% 12%;
+    --popover-foreground: 0 0% 96%;
+
+    --primary: 0 0% 96%;
+    --primary-foreground: 240 6% 10%;
+
+    --secondary: 240 5% 15%;
+    --secondary-foreground: 0 0% 96%;
+
+    --muted: 240 5% 16%;
+    --muted-foreground: 240 5% 65%;
+
+    --accent: 240 5% 16%;
+    --accent-foreground: 0 0% 96%;
+
+    --brand: 73 78% 61%;
+    --brand-foreground: 240 6% 10%;
+    --brand-muted: 73 30% 22%;
+
+    --lavender: 255 55% 76%;
+    --lavender-foreground: 240 6% 10%;
+    --lavender-muted: 255 25% 24%;
+
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 5% 20%;
+    --input: 240 5% 20%;
+    --ring: 73 78% 55%;
+
+    --sidebar: 240 6% 6%;
+    --sidebar-foreground: 0 0% 96%;
+    --sidebar-muted: 240 5% 55%;
+    --sidebar-accent: 0 0% 100%;
+    --sidebar-accent-foreground: 240 6% 10%;
+    --sidebar-border: 240 5% 16%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  .tabular {
+    font-feature-settings: "tnum" 1, "cv01" 1;
+  }
+}
