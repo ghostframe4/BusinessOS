@@ -354,10 +354,13 @@ Delimita o que e **skill** (logica de negocio do agente) versus o que e **MCP**
   `agent:market-map`/`agent:problem-magnet`), leitura de git para diffs/auditoria,
   e — no futuro — Supabase. A regra de "quem pode escrever o que" vive na skill + no
   repositorio, nunca no MCP.
-- **Supabase e MCP futuro, nao presente** (PRD 2.2 / content-model 14). O plano: quando
-  existir, `repository.ts` ganha um backend Supabase espelhando o frontmatter, e os
-  agentes **nao mudam** — continuam chamando `readEntity`/`writeEntity`. O MCP do
-  Supabase seria detalhe de infra, invisivel para a skill. Documentar, nao implementar.
+- **Supabase e a persistencia de producao (ADR 0001), nao mais "futuro".** Confirmou-se
+  o plano: `repository.ts` ganhou um backend Supabase (`SupabaseContentStore`) espelhando
+  o frontmatter, e os agentes **nao mudaram** — continuam chamando `readEntity`/
+  `writeEntity` pelos CLIs. O tenant e resolvido por contexto (`withAdminContext` para os
+  CLIs, no tenant do admin); a infra Supabase e detalhe invisivel para a skill. (Um MCP
+  do Supabase, se um dia usado, tambem seria so infra — a regra de escrita segue no
+  repositorio.)
 - **Skills sao pequenas e compostaveis.** Preferir varios agentes de alcada estreita
   (secao 3) a um agente monolitico. Uma skill = uma secao/entidade de escrita.
 
@@ -421,9 +424,15 @@ proibida — leia de outras secoes para contexto, mas so proponha na sua.
 Voce PROPOE; o founder DISPOE na UI. Nao ha execucao autonoma "final".
 
 ## Stack (nao re-litigar)
-Next.js App Router + TS, Tailwind + shadcn/ui, Inter, P&B minimalista. Sem banco:
-persistencia = arquivos MD locais em content/. Supabase e futuro (nao implementar).
+Next.js App Router + TS, Tailwind + shadcn/ui, Inter, P&B minimalista.
+Persistencia de producao: Postgres/Supabase multi-tenant + auth (RLS); modo `file`
+(MD em content/) segue para dev/testes. A FORMA do conteudo nao mudou. Ver ADR 0001.
 ```
+
+> **Nota de atualizacao (ADR 0001).** O bloco "Stack" acima e um exemplo do `CLAUDE.md`;
+> foi atualizado junto com o arquivo real. Para agentes de CLI, nada muda no fluxo
+> (mesma porta, mesmos CLIs); no modo `supabase` eles operam no tenant do admin via
+> `withAdminContext`.
 
 ### 7.2 `AGENTS.md` (registro legivel — esqueleto)
 

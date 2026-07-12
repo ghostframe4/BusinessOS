@@ -22,6 +22,19 @@ depends_on: [docs/00-briefing.md]
 > briefing); portanto **este documento e a autoridade sobre a forma dos arquivos de
 > entidade**. Em conflito de visao/escopo, o briefing prevalece.
 
+> **Nota de atualizacao (ADR 0001 — persistencia Supabase multi-tenant).** A **fonte de
+> verdade** deixou de ser os arquivos `content/` e passou a ser o **Postgres/Supabase**
+> (`CONTENT_STORE=supabase`), com uma copia das entidades **por usuario** (multi-tenant,
+> RLS). O que **este documento define — a FORMA do conteudo** (frontmatter, schema zod,
+> enums, `ai_context`, `REGISTRY`, templates, invariantes) — **continua valendo tal e
+> qual**: no banco, cada entidade e uma linha em `content_entities` cujo `frontmatter`
+> (jsonb) + `body` espelham exatamente este modelo. Mudou apenas a **camada de
+> persistencia** (a interface `ContentStore`), nao a forma. O modo `file` (arquivos MD)
+> permanece como fallback de dev/testes. Onde o texto abaixo diz "arquivo"/"disco"/"fonte
+> unica", leia "a entidade persistida pela porta unica `lib/content/repository`", que
+> hoje resolve o store por contexto (arquivo **ou** linha do banco). Ver `docs/04` §2,
+> §5 e §11 e o ADR 0001.
+
 ---
 
 ## 1. Objetivo e escopo deste documento
@@ -96,8 +109,10 @@ Regras do layout:
 - `oferta` existe em **dois** arquivos distintos: `content/direcao/oferta.md` (tese)
   e `content/validacao/oferta.md` (evidencia validada). Sao entidades separadas com
   ids diferentes.
-- Sem estado paralelo: `content/` e a **fonte unica**. A UI e um *editor* desses
-  arquivos, nao um espelho de outro banco.
+- Sem estado paralelo: existe **uma unica fonte de verdade** por entidade, acessada
+  pela porta unica (`lib/content/repository`). A UI e um *editor* dessa fonte, nao um
+  espelho independente. (Desde o ADR 0001, essa fonte e o banco no modo `supabase`; o
+  layout `content/` acima descreve o modo `file` e a semente historica do admin.)
 - Encoding **UTF-8**, quebras de linha **LF**, sem BOM.
 
 > O conjunto de arquivos validos NAO e inferido do filesystem — e fixado por um
@@ -1165,8 +1180,9 @@ Este doc e o contrato para:
 
 - **Arquitetura & stack** (`docs/01+`) — deve situar `content/`, `lib/content/`
   (`schema.ts`, `registry.ts`, `repository.ts`) na estrutura Next.js e amarrar o
-  seeder ao primeiro run; e mapear este modelo para o plano Supabase futuro (uma
-  tabela `entities` espelhando o frontmatter + coluna `body`, sem mudar o contrato).
+  seeder ao primeiro run. O mapeamento deste modelo para Supabase **ja foi feito** (ADR
+  0001): a tabela `content_entities` espelha o `frontmatter` (jsonb) + `body`, uma copia
+  por usuario, sem mudar o contrato de dominio. Ver `docs/04` §11.
 - **Design system / UI** — `EntityCard`, `EntityForm`, badges de `status` (rotulos
   6.2), toggle grid/lista; consome `EntityMeta`/`EntityDoc` (secao 7).
 - **Especificacao de agentes & skills** — usa `readEntity`/`writeEntity`,

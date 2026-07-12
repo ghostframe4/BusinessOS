@@ -19,6 +19,7 @@
  */
 import { readFile } from "node:fs/promises";
 
+import { recordActivity } from "@/lib/content/activity";
 import {
   ConflictError,
   NotInRegistryError,
@@ -27,6 +28,9 @@ import {
 } from "@/lib/content/errors";
 import { writeEntity, type WriteInput } from "@/lib/content/repository";
 import type { Editor, Frontmatter } from "@/lib/content/schema";
+import { withAdminContext } from "@/lib/content/session";
+
+import { resolveAdmin } from "./lib/resolve-admin";
 
 /** Erro de uso do CLI (flags faltando/invalidas) — mapeado para `kind: 'usage'`. */
 class UsageError extends Error {
@@ -175,22 +179,35 @@ async function main(): Promise<void> {
     throw new UsageError("--base-revision e obrigatorio.");
   }
 
+  // Capturado apos o guard: preserva o estreitamento de tipo (string) dentro do
+  // closure de `withAdminContext`, onde a narrowing de `raw.id` nao sobrevive.
+  const entityId = raw.id;
   const editor = parseEditor(raw.editor);
   const baseRevision = parseBaseRevision(raw.baseRevision);
   const body = await resolveBody(raw);
   const patch = buildPatch(raw);
 
-  const input: WriteInput = {
-    id: raw.id,
-    editor,
-    baseRevision,
-    frontmatterPatch: patch as Partial<Frontmatter>,
-    body,
-  };
+  // Multi-tenant (ADR 0001): sem sessao HTTP, o CLI age como o ADMIN via
+  // service_role (`withAdminContext`). No modo `file`, roda local como founder.
+  const admin = await resolveAdmin();
 
-  const doc = await writeEntity(input);
-  const { id, revision, status, last_edited_by, updated } = doc.frontmatter;
-  print({ ok: true, id, revision, status, last_edited_by, updated });
+  await withAdminContext(admin.userId, admin.email, async () => {
+    // Batimento AO VIVO para o Workflow: registra ANTES da escrita para que ate
+    // mesmo tentativas que batam em conflito/policy mostrem o agente operando.
+    await recordActivity({ actor: editor, action: "write", entityId });
+
+    const input: WriteInput = {
+      id: entityId,
+      editor,
+      baseRevision,
+      frontmatterPatch: patch as Partial<Frontmatter>,
+      body,
+    };
+
+    const doc = await writeEntity(input);
+    const { id, revision, status, last_edited_by, updated } = doc.frontmatter;
+    print({ ok: true, id, revision, status, last_edited_by, updated });
+  });
 }
 
 main().catch((err: unknown) => {

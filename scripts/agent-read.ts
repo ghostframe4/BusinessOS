@@ -15,12 +15,17 @@
  * Erro:    imprime `{ ok:false, kind, ... }`, exit 1 (not_in_registry · validation ·
  *          usage · unknown).
  */
+import { recordActivity } from "@/lib/content/activity";
+import { ENTITY_AGENT } from "@/lib/content/agent-map";
 import {
   NotInRegistryError,
   ValidationError,
 } from "@/lib/content/errors";
 import { listEntities, readEntity } from "@/lib/content/repository";
 import type { Section } from "@/lib/content/schema";
+import { withAdminContext } from "@/lib/content/session";
+
+import { resolveAdmin } from "./lib/resolve-admin";
 
 /** Erro de uso do CLI (flags faltando/invalidas) — mapeado para `kind: 'usage'`. */
 class UsageError extends Error {
@@ -80,18 +85,31 @@ function print(payload: unknown): void {
 async function main(): Promise<void> {
   const raw = parseArgs(process.argv.slice(2));
 
-  if (raw.id) {
-    if (raw.section !== undefined) {
-      throw new UsageError("Use --id OU --section, nao ambos.");
-    }
-    const doc = await readEntity(raw.id);
-    print({ frontmatter: doc.frontmatter, body: doc.body });
-    return;
-  }
+  // Multi-tenant (ADR 0001): sem sessao HTTP, o CLI age como o ADMIN via
+  // service_role (`withAdminContext`). No modo `file`, roda local como founder.
+  const admin = await resolveAdmin();
 
-  const section = raw.section !== undefined ? parseSection(raw.section) : undefined;
-  const metas = await listEntities(section);
-  print(metas);
+  await withAdminContext(admin.userId, admin.email, async () => {
+    if (raw.id) {
+      if (raw.section !== undefined) {
+        throw new UsageError("Use --id OU --section, nao ambos.");
+      }
+      const doc = await readEntity(raw.id);
+      // Batimento AO VIVO para o Workflow. Quem esta lendo? Preferimos o ator
+      // explicito (env BUSINESSOS_ACTOR, ex.: "agent:icp" — util quando um agente
+      // le uma entidade de outra alcada como contexto); no default, atribuimos ao
+      // agente dono da entidade lida (ENTITY_AGENT).
+      const actor = process.env.BUSINESSOS_ACTOR ?? ENTITY_AGENT[raw.id] ?? null;
+      await recordActivity({ actor, action: "read", entityId: raw.id });
+      print({ frontmatter: doc.frontmatter, body: doc.body });
+      return;
+    }
+
+    const section =
+      raw.section !== undefined ? parseSection(raw.section) : undefined;
+    const metas = await listEntities(section);
+    print(metas);
+  });
 }
 
 main().catch((err: unknown) => {

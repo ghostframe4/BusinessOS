@@ -17,6 +17,23 @@ NUNCA edite arquivos em `content/` diretamente (nem via filesystem/echo/patch de
 Rode-os via Bash. NUNCA chame o filesystem cru; a UI usa `readEntity`/`writeEntity`
 por baixo — voce usa os CLIs por cima.
 
+A porta unica NAO mudou de assinatura com a migracao para Supabase (ADR 0001): quem
+resolve o tenant e o CONTEXTO de execucao (AsyncLocalStorage), estabelecido nos pontos
+de entrada. No modo `supabase`, os CLIs/ETL/onboarding operam via `withAdminContext`,
+agindo no tenant do **admin** (o founder) com `service_role` (contorna a RLS). No modo
+`file` (padrao de dev/testes), operam direto sobre `content/`, sem contexto.
+
+### Atividade ao vivo no Workflow
+Cada `agent:read`/`agent:write` deixa um batimento efemero (~10s) que o board de
+Workflow mostra em "TRABALHANDO AGORA". Em `agent:write` o ator vem do `--editor`.
+Em `agent:read` o ator e, por padrao, o agente DONO da entidade lida; ao ler uma
+entidade de OUTRA alcada como contexto, prefixe com `BUSINESSOS_ACTOR=agent:<seu-slug>`
+para aparecer com o seu nome (ex.: `BUSINESSOS_ACTOR=agent:icp pnpm agent:read --id founder/objetivo`).
+
+O heartbeat de atividade segue **global** em `.businessos/` (nao e multi-tenant nesta
+fase — ver ADR 0001, "Consequencias"). Ele reflete a operacao dos CLIs, que rodam no
+tenant do admin.
+
 ## Antes de propor qualquer mudanca
 1. `pnpm agent:read --id <alvo>` e leia `frontmatter.ai_context` (purpose, read_when,
    related, write_policy, instructions).
@@ -46,5 +63,20 @@ proibida — leia de outras secoes para contexto, mas so proponha na sua.
 Voce PROPOE; o founder DISPOE na UI. Nao ha execucao autonoma "final".
 
 ## Stack (nao re-litigar)
-Next.js App Router + TS, Tailwind + shadcn/ui, Inter, P&B minimalista. Sem banco:
-persistencia = arquivos MD locais em content/. Supabase e futuro (nao implementar).
+Next.js App Router + TS, Tailwind + shadcn/ui, Inter, P&B minimalista.
+
+Persistencia de PRODUCAO: **Postgres/Supabase**, **multi-tenant** — cada usuario tem a
+sua copia das 11 entidades, isolada por **RLS** (`auth.uid()`), com **autenticacao**
+(Supabase Auth, email+senha). A FORMA do conteudo NAO mudou (schema zod, `REGISTRY`,
+templates, frontmatter YAML); o que mudou foi a **camada de persistencia** — agora a
+tabela `content_entities` (uma linha por entidade por usuario), no lugar dos arquivos.
+O modo **`file`** (arquivos MD em `content/`) continua para **dev/testes/rollback**,
+selecionado por `CONTENT_STORE=file|supabase`. Os arquivos em `content/` seguem no repo
+como semente historica do admin (fonte do ETL). Ver **ADR 0001**
+(`docs/decisions/0001-persistencia-supabase-multitenant.md`) e `docs/04-technical-spec.md`.
+
+Plataforma que veio junto (ver ADR): **storage** privado de anexos (bucket `attachments`,
+infra + policies prontas, sem UI ainda) e **IA integrada** por "cabo solto" — liga
+sozinha quando `ANTHROPIC_API_KEY` existe (`AI_ENABLED`); sem a chave, a UI degrada com
+elegancia. A IA, quando ligada, escreve pela **mesma porta** (`repository` /
+`propose -> needs_review`), nunca contornando a politica.

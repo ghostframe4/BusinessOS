@@ -1,33 +1,37 @@
 import { config } from "@/lib/config";
 
+import { getContext } from "../context";
 import { FileContentStore } from "./file-store";
 import type { ContentStore } from "./types";
 
 /**
- * Selecao do store por `config.CONTENT_STORE` (docs/04 §5.2).
- * Hoje sempre 'file'. O adapter 'supabase' e fase futura (store/supabase-store.ts,
- * stub documentado) e nao esta ligado aqui.
+ * Resolucao do store (ADR 0001 §3).
+ *
+ * - Se ha um CONTEXTO ativo (`runWithContext` via withUserContext/withAdminContext),
+ *   usa o store ja escopado ao tenant. E o caminho de producao (Supabase).
+ * - Sem contexto, so o modo `file` tem um store global valido (dev/testes/seed
+ *   local, retrocompat total). No modo `supabase` sem contexto, e erro explicito
+ *   — persistencia multi-tenant exige saber de quem sao os dados.
  */
-let store: ContentStore | null = null;
+let fileStore: FileContentStore | null = null;
 
 export function getStore(): ContentStore {
-  if (store) return store;
-  switch (config.CONTENT_STORE) {
-    case "file":
-      store = new FileContentStore(config.CONTENT_ROOT);
-      break;
-    case "supabase":
-      // Fase futura — ver lib/content/store/supabase-store.ts e docs/04 §11.
-      throw new Error(
-        "CONTENT_STORE=supabase ainda nao implementado (fase futura — ver docs/04 §11).",
-      );
-    default:
-      throw new Error(`CONTENT_STORE invalido: ${String(config.CONTENT_STORE)}`);
+  const ctx = getContext();
+  if (ctx) return ctx.store;
+
+  if (config.CONTENT_STORE === "file") {
+    if (!fileStore) fileStore = new FileContentStore(config.CONTENT_ROOT);
+    return fileStore;
   }
-  return store;
+
+  throw new Error(
+    "CONTENT_STORE=supabase exige um contexto de execucao (withUserContext / " +
+      "withAdminContext / runWithContext). Nenhum contexto ativo — os pontos de " +
+      "entrada (Server Actions, RSC, Route Handlers, CLIs) devem estabelece-lo.",
+  );
 }
 
-/** Reseta o singleton (util para testes que trocam CONTENT_ROOT). */
+/** Reseta o singleton do file-store (util para testes que trocam CONTENT_ROOT). */
 export function resetStore(): void {
-  store = null;
+  fileStore = null;
 }

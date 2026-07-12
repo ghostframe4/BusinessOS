@@ -3,17 +3,17 @@ import { notFound } from "next/navigation";
 import { EntityCardGrid, type EntityView } from "@/components/entities/entity-card-grid";
 import { EmptyState } from "@/components/entities/empty-state";
 import { ViewToggle } from "@/components/entities/view-toggle";
+import { Breadcrumb } from "@/components/layout/breadcrumb";
+import { Topbar } from "@/components/layout/topbar";
+import { withUserContext } from "@/lib/content/session";
 import { SECTION_LABEL } from "@/lib/content/labels";
 import { listEntities } from "@/lib/content/repository";
 import { sectionEnum } from "@/lib/content/schema";
 
-export const runtime = "nodejs"; // precisa de fs (lib/content)
-export const dynamic = "force-dynamic"; // sempre reflete o disco (round-trip fiel)
-
-/** Materializa as 4 seções como rotas estáticas (docs/04 §3.2). */
-export function generateStaticParams() {
-  return sectionEnum.options.map((section) => ({ section }));
-}
+export const runtime = "nodejs"; // precisa de fs/DB (lib/content)
+// Dados por-usuario (ADR 0001 §Consequencias): render dinamico por sessao. Sem
+// `generateStaticParams` — o conteudo do tenant nunca e pre-renderizado no build.
+export const dynamic = "force-dynamic";
 
 /** Normaliza o search param `?view` para uma visualização válida (default: grade). */
 function resolveView(raw: string | undefined): EntityView {
@@ -33,25 +33,38 @@ export default async function SectionPage({
 
   const { view: viewParam } = await searchParams;
   const view = resolveView(viewParam);
-  const entities = await listEntities(parsed.data);
+  const entities = await withUserContext(() => listEntities(parsed.data));
 
   return (
-    <div className="flex flex-col">
-      <header className="mb-8 flex items-center justify-between gap-4">
-        <h1 className="text-3xl font-semibold tracking-tight">
-          {SECTION_LABEL[parsed.data]}
-        </h1>
-        <ViewToggle value={view} />
-      </header>
+    <>
+      <Topbar
+        breadcrumb={<Breadcrumb items={[{ label: SECTION_LABEL[parsed.data] }]} />}
+      >
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-4xl font-bold tracking-tight md:text-5xl">
+              {SECTION_LABEL[parsed.data]}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {entities.length > 0
+                ? `${entities.length} ${entities.length === 1 ? "entidade" : "entidades"} nesta seção`
+                : "Organize as decisões desta seção."}
+            </p>
+          </div>
+          <ViewToggle value={view} />
+        </header>
+      </Topbar>
 
-      {entities.length === 0 ? (
-        <EmptyState
-          title="Nada por aqui ainda"
-          description="Esta seção ainda não tem entidades preenchidas. Assim que houver conteúdo, os cards aparecem aqui."
-        />
-      ) : (
-        <EntityCardGrid entities={entities} view={view} />
-      )}
-    </div>
+      <div className="px-6 pb-10 pt-6 md:px-8">
+        {entities.length === 0 ? (
+          <EmptyState
+            title="Nada por aqui ainda"
+            description="Esta seção ainda não tem entidades preenchidas. Assim que houver conteúdo, os cards aparecem aqui."
+          />
+        ) : (
+          <EntityCardGrid entities={entities} view={view} />
+        )}
+      </div>
+    </>
   );
 }

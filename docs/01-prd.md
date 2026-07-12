@@ -45,12 +45,19 @@ Este PRD existe para:
 | O4 | **Contrato de contexto legivel.** Qualquer MD abre num editor/agente e comunica o estado da entidade (frontmatter valido + headings claros) sem contexto extra. | Viabiliza colaboracao multi-agente barata. |
 | O5 | **Leitura/escrita por agentes.** Agentes e skills leem e escrevem os mesmos arquivos que a UI, respeitando o mesmo formato. | Colaboracao humano+IA de primeira classe. |
 | O6 | **Fidelidade ao design.** Minimalista preto & branco, Inter, cantos arredondados, hover na sidebar; componentizado (Storybook). | Consistencia e foco. |
-| O7 | **Zero dependencia de banco.** Tudo funciona so com filesystem local. | Propriedade dos dados, sem lock-in. |
+| O7 | **Zero dependencia de banco.** Tudo funciona so com filesystem local. _(Revisto pelo ADR 0001: producao usa Supabase; o modo `file` preserva esse objetivo para dev/rollback e mantem propriedade dos dados via `content/`.)_ | Propriedade dos dados, sem lock-in. |
 
 ### 2.2 Nao-Objetivos (explicitamente fora — nesta fase)
 
-- **Sem banco de dados conectado.** Persistencia = arquivos MD locais em `content/`. Supabase apenas documentado como futuro, nunca implementado agora.
-- **Sem autenticacao / multiusuario.** Produto single-founder local.
+> **Superado pelo ADR 0001 (2026-07-12).** Os dois primeiros nao-objetivos abaixo
+> deixaram de valer: a persistencia de producao agora e **Postgres/Supabase multi-tenant
+> com autenticacao** (o modo `file` segue como fallback de dev/testes). Ver
+> `docs/decisions/0001-persistencia-supabase-multitenant.md`.
+
+- ~~**Sem banco de dados conectado.**~~ (Superado — ADR 0001.) Persistencia de producao =
+  Postgres/Supabase; arquivos MD em `content/` seguem como modo `file`/semente historica.
+- ~~**Sem autenticacao / multiusuario.**~~ (Superado — ADR 0001.) O produto passou a ser
+  multiusuario com auth (Supabase Auth) e isolamento por tenant (RLS).
 - **Sem tabelas** como padrao de exibicao — cards sempre.
 - **Sem ERP/CRM transacional.** `erp` e `fluxo-de-caixa` sao documentos de contexto, nao modulos com lancamentos operacionais.
 - **Sem execucao autonoma sem revisao.** Agentes propoem; o founder aprova via UI.

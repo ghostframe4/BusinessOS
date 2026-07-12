@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { useSelectedLayoutSegment } from "next/navigation";
 
 import { Sidebar } from "@/components/layout/sidebar";
-import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { sectionEnum, type Section } from "@/lib/content/schema";
 
 /**
@@ -13,6 +12,9 @@ import { sectionEnum, type Section } from "@/lib/content/schema";
  * (`useSelectedLayoutSegment` -> "founder" | "direcao" | ...), destacada na nav.
  * Client component só para ler o segmento; os `children` continuam sendo Server
  * Components renderizados no servidor e repassados como prop.
+ *
+ * O `main` é full-width: cada página monta seu próprio `Topbar` (com o
+ * alternador de tema) e controla o padding do conteúdo.
  */
 export default function AppLayout({ children }: { children: ReactNode }) {
   const segment = useSelectedLayoutSegment();
@@ -20,16 +22,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const activeSection: Section | undefined = parsed.success ? parsed.data : undefined;
 
   return (
-    <div className="flex min-h-dvh">
-      <Sidebar activeSection={activeSection} />
-      <main className="min-w-0 flex-1 bg-content">
-        <header className="sticky top-0 z-10 flex h-14 items-center justify-end border-b border-border bg-content/80 px-6 backdrop-blur md:px-8">
-          <ThemeToggle />
-        </header>
-        <div className="mx-auto w-full max-w-[--content-max] px-6 py-6 md:px-8">
-          {children}
-        </div>
-      </main>
+    // overflow-x-clip (na raiz, borda x=0) contém o deslize da gaveta de
+    // conversas (animate-drawer-in parte de translateX(-100%)) sem cortar a
+    // sobreposição dela sob a sidebar nem criar scroll horizontal — e, por não
+    // ser `hidden`, não força overflow-y e preserva o `sticky` das colunas.
+    <div className="flex min-h-dvh overflow-x-clip bg-background">
+      <Sidebar activeSection={activeSection} activeSegment={segment ?? undefined} />
+      <main className="flex min-w-0 flex-1 flex-col">{children}</main>
     </div>
   );
 }

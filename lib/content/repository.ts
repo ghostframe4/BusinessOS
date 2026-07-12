@@ -1,5 +1,6 @@
 import { config } from "@/lib/config";
 
+import { getContext } from "./context";
 import { getExtension } from "./entity-extensions";
 import {
   ConflictError,
@@ -100,7 +101,11 @@ function resolvePolicy(
 export function buildSeedFrontmatter(
   def: EntityDef,
   timestamp: string,
+  ownerEmail?: string,
 ): Frontmatter {
+  // O `owner` do seed e o dono do tenant: parametro explicito > contexto de
+  // execucao (withUserContext/withAdminContext) > founder (fallback modo file).
+  const owner = ownerEmail ?? getContext()?.ownerEmail ?? config.FOUNDER_EMAIL;
   const ai_context: AiContext = {
     purpose: def.purpose,
     write_policy: def.defaultWritePolicy,
@@ -114,7 +119,7 @@ export function buildSeedFrontmatter(
     status: "empty",
     summary: "",
     tags: [],
-    owner: config.FOUNDER_EMAIL,
+    owner,
     order: def.order,
     created: timestamp,
     updated: timestamp,

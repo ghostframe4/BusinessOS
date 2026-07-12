@@ -18,6 +18,13 @@ validacao, write_policy, deteccao de conflito e escrita atomica:
   [--summary ... --tags a,b --set k=v --body-file <tmp>]`.
 NUNCA editar `content/` com fs cru / `echo` / `Edit`.
 
+**Tenant (ADR 0001).** A porta unica e a mesma; o que resolve "de quem sao os dados" e
+o contexto de execucao. No modo `supabase`, os CLIs rodam com `service_role` no tenant
+do **admin** (o founder) via `withAdminContext` — contornam a RLS e agem sobre a copia
+das entidades do admin. No modo `file` (padrao de dev/testes), operam direto sobre
+`content/`, sem contexto. Em ambos os casos, as regras (validacao, write_policy,
+conflito, `propose -> needs_review`) sao identicas, herdadas de `repository.ts`.
+
 A coluna **invocar por** lista a intencao do founder; na UI, ela e disparada pelo botao
 **"Pedir a IA"** do card/pagina da entidade (que roteia para o agente de alcada correto).
 

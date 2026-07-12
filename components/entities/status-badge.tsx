@@ -54,7 +54,7 @@ export interface StatusBadgeProps {
   className?: string;
 }
 
-/** Badge de status monocromático com rótulo pt-BR sempre presente (docs/03 §7.2). */
+/** Badge de status (sistema Flux) com rótulo pt-BR sempre presente (docs/03 §7.2). */
 export function StatusBadge({ status, className }: StatusBadgeProps) {
   const style = STATUS_STYLE[status];
   return (

@@ -1,5 +1,6 @@
 import type { Preview } from "@storybook/nextjs-vite";
 import React from "react";
+import { fontVariables } from "../app/fonts";
 import "../app/globals.css";
 
 const preview: Preview = {
@@ -37,7 +38,7 @@ const preview: Preview = {
     (Story, context) => {
       const theme = context.globals.theme === "dark" ? "dark" : "";
       return (
-        <div className={theme}>
+        <div className={`${fontVariables} ${theme}`}>
           <div className="min-h-24 bg-background p-6 font-sans text-foreground">
             <Story />
           </div>

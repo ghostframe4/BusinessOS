@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Check, Copy, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
+import { AiUnavailableButton } from "@/components/entities/ai-unavailable-button";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,7 +16,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import type { Question } from "@/lib/content/questionnaire";
-import { cn } from "@/lib/utils";
+import { requestAiFill } from "@/lib/ai/fill-client";
 
 export interface GenerateBriefingProps {
   id: string;
@@ -24,6 +26,8 @@ export interface GenerateBriefingProps {
   answers: Record<string, string>;
   /** Slug do agente responsável, ou `null` se a entidade é `founder_only`. */
   agentSlug: string | null;
+  /** IA ligada no runtime? (cabo solto: presença da ANTHROPIC_API_KEY). */
+  aiEnabled?: boolean;
   className?: string;
 }
 
@@ -74,10 +78,12 @@ function buildBriefingPrompt(
 }
 
 /**
- * Botão "Gerar briefing com IA": pega as respostas atuais do questionário e
- * monta o comando pronto para o founder colar no Claude Code (padrão sem chave
- * de API — a IA "local" é o próprio Claude Code rodando no repo). Nada é
- * publicado sem revisão do founder.
+ * Botão "Gerar briefing com IA": pega as respostas atuais do questionário.
+ *  - `aiEnabled` (e não `founder_only`): sintetiza o briefing no runtime (chama a
+ *    API, que grava como `needs_review`). O prompt para o Claude Code é alternativa.
+ *  - `!aiEnabled` (e não `founder_only`): botão desabilitado + tooltip.
+ *  - `founder_only`: mantém apenas o prompt para o founder trazer o texto de volta.
+ * Nada é publicado sem revisão do founder.
  */
 export function GenerateBriefing({
   id,
@@ -85,14 +91,28 @@ export function GenerateBriefing({
   questions,
   answers,
   agentSlug,
+  aiEnabled = true,
   className,
 }: GenerateBriefingProps) {
+  const router = useRouter();
   const [copied, setCopied] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [running, setRunning] = useState(false);
 
+  const canRuntime = agentSlug !== null;
   const answered = questions.filter(
     (q) => (answers[q.heading] ?? "").trim().length > 0,
   ).length;
   const prompt = buildBriefingPrompt(id, title, questions, answers, agentSlug);
+
+  if (canRuntime && !aiEnabled) {
+    return (
+      <AiUnavailableButton variant="outline" size="sm" className={className}>
+        <Sparkles aria-hidden />
+        Gerar briefing com IA
+      </AiUnavailableButton>
+    );
+  }
 
   async function handleCopy(): Promise<void> {
     try {
@@ -105,8 +125,24 @@ export function GenerateBriefing({
     }
   }
 
+  async function handleGenerate(): Promise<void> {
+    setRunning(true);
+    try {
+      const result = await requestAiFill({ id, mode: "briefing", answers });
+      if (result.ok) {
+        toast.success("Briefing proposto — revise e aprove na barra de proposta.");
+        setOpen(false);
+        router.refresh();
+      } else {
+        toast.error(result.message);
+      }
+    } finally {
+      setRunning(false);
+    }
+  }
+
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button type="button" variant="outline" size="sm" className={className}>
           <Sparkles aria-hidden />
@@ -117,8 +153,8 @@ export function GenerateBriefing({
         <DialogHeader>
           <DialogTitle>Gerar briefing com IA</DialogTitle>
           <DialogDescription>
-            A IA lê as suas respostas e sintetiza um briefing. Copie o prompt
-            abaixo e cole no Claude Code — nada é publicado sem a sua revisão.
+            A IA lê as suas respostas e sintetiza um briefing. Nada é publicado
+            sem a sua revisão.
           </DialogDescription>
         </DialogHeader>
 
@@ -129,7 +165,33 @@ export function GenerateBriefing({
           {answered < questions.length && "."}
         </p>
 
+        {canRuntime && (
+          <Button
+            type="button"
+            variant="brand"
+            onClick={handleGenerate}
+            disabled={running}
+          >
+            {running ? (
+              <>
+                <Loader2 className="animate-spin" aria-hidden />
+                Sintetizando briefing...
+              </>
+            ) : (
+              <>
+                <Sparkles aria-hidden />
+                Gerar briefing com IA
+              </>
+            )}
+          </Button>
+        )}
+
         <div className="flex flex-col gap-2">
+          <p className="text-sm font-medium text-muted-foreground">
+            {canRuntime
+              ? "Ou copie o prompt para rodar no Claude Code"
+              : "Esta entidade é founder_only — copie o prompt e traga o texto de volta"}
+          </p>
           <div className="flex items-start gap-2 rounded-md border bg-muted p-3">
             <code className="min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-xs">
               {prompt}

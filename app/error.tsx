@@ -18,17 +18,19 @@ export default function Error({
   }, [error]);
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-6 text-center">
-      <TriangleAlert className="size-10 text-destructive" aria-hidden />
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-background px-6 text-center">
+      <span className="flex size-16 items-center justify-center rounded-full bg-destructive/10">
+        <TriangleAlert className="size-8 text-destructive" aria-hidden />
+      </span>
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="text-3xl font-bold tracking-tight">
           Algo deu errado
         </h1>
         <p className="max-w-sm text-sm text-muted-foreground">
           Não foi possível carregar este conteúdo. Tente novamente.
         </p>
       </div>
-      <Button onClick={reset} className="mt-2">
+      <Button onClick={reset} variant="brand" className="mt-2">
         Tentar de novo
       </Button>
     </div>

@@ -6,7 +6,7 @@ deriva_de: 00-briefing
 versao: 1.0.0
 owner: ruanbraz@overlens.com.br
 atualizado_em: 2026-07-11
-tags: [design-system, tokens, tailwind, shadcn, inter, sidebar, cards, acessibilidade]
+tags: [design-system, tokens, tailwind, shadcn, geist, sidebar, cards, acessibilidade]
 ---
 
 # BusinessOS — Design System
@@ -145,30 +145,38 @@ Convencao shadcn: valores HSL **sem** o wrapper `hsl()`. `--radius` incluido aqu
 
 ---
 
-## 3. Tipografia — Inter
+## 3. Tipografia — Geist
 
-### 3.1 Setup (Next.js `next/font`)
+Grotesca geometrica (Geist Sans + Geist Mono, pacote `geist`), escolhida para o
+sistema "Flux": limpa e neutra, mas encorpada em pesos altos e tamanhos grandes.
+Vem embutida localmente (sem chamada ao Google Fonts).
+
+### 3.1 Setup (Next.js `next/font` via pacote `geist`)
 
 ```ts
 // app/fonts.ts
-import { Inter } from "next/font/google";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 
-export const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-sans",
-  display: "swap",
-});
+// as .variable publicam --font-geist-sans / --font-geist-mono no <html>
+export const fontVariables = `${GeistSans.variable} ${GeistMono.variable}`;
 ```
 
 ```tsx
-// app/layout.tsx  ->  <html className={inter.variable}> ; body usa font-sans
+// app/layout.tsx  ->  <html className={fontVariables}> ; body usa font-sans
 ```
 
-`font-feature-settings` recomendado no `body` para numeros tabulares (relevante em `fluxo-de-caixa`):
+`globals.css` mapeia os tokens do sistema para as vars da Geist, de modo que o
+Tailwind (`font-sans`/`font-mono`) continua referenciando `--font-sans` sem
+saber qual e a familia concreta:
 
 ```css
+:root {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", monospace;
+}
 body {
-  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 .tabular { font-feature-settings: "tnum" 1, "cv01" 1; } /* aplicar em valores $ */
@@ -192,7 +200,7 @@ body {
 **Pesos disponiveis:** 400 (regular), 500 (medium), 600 (semibold), 700 (bold). Evitar 800/900 — pesado demais para o tom calmo.
 
 **Regras:**
-- Titulos usam tracking negativo leve (Inter fica "solto" em tamanhos grandes).
+- Titulos usam tracking negativo leve (grotescas ficam "soltas" em tamanhos grandes).
 - Um card tem **exatamente um** `text-base font-semibold` (o titulo). Tudo mais e `text-sm`/`text-xs`.
 - Corpo de leitura do MD renderizado usa `text-base` com `leading-relaxed` para conforto.
 
@@ -583,6 +591,8 @@ Criar/editar uma entidade = editar seu arquivo MD (frontmatter + corpo). Superfi
 | Sucesso | toast (`Sonner`) "Alteracoes salvas" + card reflete novo `atualizado_em` |
 | Erro | mensagem inline em `text-destructive text-sm`; campo com `border-destructive` + `aria-invalid` |
 | Foco | ao abrir, foco no primeiro campo; `Esc` fecha; foco fica preso no dialog (focus trap do Radix) |
+
+> **Campos ocupam a largura do container (regra firme).** Todo `Input`, `Select` e `Textarea` de formulario e **full-width**: o primitivo ja traz `w-full`, entao **nao** o restrinja com wrappers `mx-auto max-w-*` em volta dos campos. O card (`section`) pode ser full-width com seu padding (`p-6 sm:p-8`); o container interno dos campos usa apenas `flex w-full flex-col` — nunca `mx-auto max-w-5xl` (isso cria gutters laterais vazios e "encolhe" os inputs). Para dividir campos lado a lado, use **grid** (`grid-cols-1 md:grid-cols-2`), nao largura maxima. Vale para `EntityForm` e `AgentEditor` — os dois formularios-matriz que os demais espelham.
 
 ---
 

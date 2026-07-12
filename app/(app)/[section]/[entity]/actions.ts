@@ -8,6 +8,7 @@ import {
   ValidationError,
 } from "@/lib/content/errors";
 import { writeEntity } from "@/lib/content/repository";
+import { withUserContext } from "@/lib/content/session";
 import type { Frontmatter } from "@/lib/content/schema";
 
 /**
@@ -83,13 +84,15 @@ function revalidateEntity(id: string): void {
  */
 export async function saveEntity(input: SaveEntityInput): Promise<SaveResult> {
   try {
-    const doc = await writeEntity({
-      id: input.id,
-      editor: "founder", // UI = founder (agentes usam a mesma função server-side)
-      baseRevision: input.baseRevision,
-      frontmatterPatch: input.frontmatterPatch as Partial<Frontmatter>,
-      body: input.body,
-    });
+    const doc = await withUserContext(() =>
+      writeEntity({
+        id: input.id,
+        editor: "founder", // UI = founder (agentes usam a mesma função server-side)
+        baseRevision: input.baseRevision,
+        frontmatterPatch: input.frontmatterPatch as Partial<Frontmatter>,
+        body: input.body,
+      }),
+    );
 
     revalidateEntity(input.id);
 
@@ -113,12 +116,14 @@ export async function approveProposal(
   input: ProposalActionInput,
 ): Promise<SaveResult> {
   try {
-    const doc = await writeEntity({
-      id: input.id,
-      editor: "founder",
-      baseRevision: input.baseRevision,
-      frontmatterPatch: { status: "in_progress" },
-    });
+    const doc = await withUserContext(() =>
+      writeEntity({
+        id: input.id,
+        editor: "founder",
+        baseRevision: input.baseRevision,
+        frontmatterPatch: { status: "in_progress" },
+      }),
+    );
 
     revalidateEntity(input.id);
 
@@ -141,12 +146,14 @@ export async function rejectProposal(
   input: ProposalActionInput,
 ): Promise<SaveResult> {
   try {
-    const doc = await writeEntity({
-      id: input.id,
-      editor: "founder",
-      baseRevision: input.baseRevision,
-      frontmatterPatch: { status: "draft" },
-    });
+    const doc = await withUserContext(() =>
+      writeEntity({
+        id: input.id,
+        editor: "founder",
+        baseRevision: input.baseRevision,
+        frontmatterPatch: { status: "draft" },
+      }),
+    );
 
     revalidateEntity(input.id);
 

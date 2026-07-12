@@ -20,9 +20,20 @@ depends_on: [docs/00-briefing.md, docs/01-prd.md, docs/02-content-model.md, docs
 > visuais**, `docs/03-design-system.md`. Este doc e a autoridade sobre **estrutura de
 > pastas, camadas, fluxo de escrita, config e ferramentas**.
 >
-> Regra de ouro que atravessa tudo: **`content/` e a fonte unica.** A UI e um editor
-> desses arquivos; agentes leem/escrevem os mesmos arquivos pela mesma porta
-> (`lib/content`). Nenhum estado paralelo. Zero banco em runtime nesta fase.
+> Regra de ouro que atravessa tudo: **uma unica fonte de verdade por entidade, atras de
+> uma porta unica** (`lib/content/repository`). A UI e um editor dessa fonte; agentes
+> leem/escrevem a mesma fonte pela mesma porta. Nenhum estado paralelo.
+
+> **ATUALIZACAO — ADR 0001 (persistencia Supabase multi-tenant).** Este doc foi escrito
+> para a fase "Markdown como fonte unica, zero banco". Desde o **ADR 0001**
+> (`docs/decisions/0001-persistencia-supabase-multitenant.md`), a persistencia de
+> **producao** e **Postgres/Supabase, multi-tenant, com autenticacao**; o modo `file`
+> (arquivos MD) continua como fallback de dev/testes/rollback, atras da **mesma**
+> interface `ContentStore`. As camadas 1–3 e os 11 call sites **nao mudaram de
+> assinatura** — um contexto `AsyncLocalStorage` resolve o tenant (ver §2 e §5.2). As
+> secoes abaixo trazem notas de atualizacao onde a realidade mudou; a §11 (que previa
+> "Supabase futuro, single-tenant") esta **SUBSTITUIDA** e reescrita como registro do que
+> de fato foi implementado.
 
 ---
 
@@ -41,14 +52,24 @@ re-litigar sem motivo forte.
 | Componentes | **Storybook `>= 8`** (builder Vite) | Um story por primitivo; decorator de tema. Secao 9. |
 | Conteudo | **Markdown + frontmatter** em `content/`, parse por **`gray-matter`** | Contrato de `02-content-model.md`. Secao 5–6. |
 | Validacao | **`zod`** | Schema unico compartilhado UI + agentes. |
-| Persistencia (agora) | **Filesystem local** (`content/`), acesso Node `fs/promises` | Store default. |
-| Persistencia (futuro) | **Supabase** atras da **mesma interface `ContentStore`** | Apenas documentado; nao instalado. Secao 11. |
+| Persistencia (producao) | **Postgres/Supabase**, multi-tenant, atras da interface `ContentStore` (`SupabaseContentStore`) | `CONTENT_STORE=supabase`. Isolamento por RLS. Secao 5 e 11 + ADR 0001. |
+| Persistencia (dev/fallback) | **Filesystem local** (`content/`), Node `fs/promises` (`FileContentStore`) | `CONTENT_STORE=file` (default). Rollback/testes. |
+| Autenticacao | **Supabase Auth** (email+senha) via `@supabase/ssr` + `middleware.ts` | So no modo `supabase`. Tabela `profiles` com `role` (admin/member). ADR 0001 §4. |
+| IA (runtime) | **Vercel AI SDK** + `@ai-sdk/anthropic` | "Cabo solto": liga quando `ANTHROPIC_API_KEY` existe (`AI_ENABLED`). ADR 0001 §6. |
+| Storage | **Supabase Storage** — bucket privado `attachments` | Infra + RLS por usuario prontas; sem UI ainda. ADR 0001 §7. |
 | Gerenciador de pacotes | **pnpm** (npm/yarn equivalentes anotados) | Comandos da secao 13 usam `pnpm dlx`. |
 | Testes | **Vitest** (unit) + **Playwright** (e2e) + **Storybook test** (componentes) | Secao 12. |
 
-**Nao-objetivos tecnicos** (do PRD §2.2): sem banco conectado, sem auth/multiusuario,
-sem realtime, sem libs de estado pesadas (Redux/Zustand/React Query), sem GraphQL, sem
-i18n. Estado de servidor = filesystem via RSC; estado de cliente = URL + `localStorage`.
+> **Nota de atualizacao (ADR 0001).** A linha de persistencia acima foi reescrita: o
+> "futuro Supabase" virou **producao** e ganhou **multi-tenant + auth + storage + IA**.
+> As deps `@supabase/supabase-js`, `@supabase/ssr`, `ai`, `@ai-sdk/anthropic` e
+> `server-only` **estao instaladas**.
+
+**Nao-objetivos tecnicos** (redacao original do PRD §2.2, **parcialmente superada** pelo
+ADR 0001): ~~sem banco conectado, sem auth/multiusuario~~ — hoje **ha** banco (Supabase)
+e **auth multi-tenant**. Seguem fora de escopo: realtime, libs de estado pesadas
+(Redux/Zustand/React Query), GraphQL, i18n. Estado de servidor = store (banco no modo
+`supabase`, filesystem no modo `file`) via RSC; estado de cliente = URL + `localStorage`.
 
 ---
 
@@ -74,18 +95,30 @@ Quatro camadas, dependencia so para baixo. A **fronteira dura** e a interface
 │            campos controlados pelo sistema · escrita atomica    │
 ├───────────────────────────────────────────────────────────────┤
 │ 4. Persistencia  (lib/content/store) ── ContentStore interface │
-│    FileContentStore (hoje: gray-matter + fs)                   │
-│    SupabaseContentStore (futuro: tabela content_entities)      │
+│    FileContentStore    (modo file: gray-matter + fs)          │
+│    SupabaseContentStore (modo supabase: tabela content_entities)│
+│    + Contexto de tenant (lib/content/context.ts, AsyncLocalStorage)│
 └───────────────────────────────────────────────────────────────┘
         Agentes/skills entram na camada 3 (mesmas funcoes da UI).
 ```
+
+> **Nota de atualizacao (ADR 0001).** As **4 camadas continuam** e a fronteira dura
+> segue sendo `ContentStore`. O que mudou na camada 4: o **`SupabaseContentStore` esta
+> ativo** (contra a tabela `content_entities`, uma copia por usuario) e um **contexto de
+> execucao via `AsyncLocalStorage`** (`lib/content/context.ts`) resolve **qual store /
+> qual tenant** por request/processo. Os **pontos de entrada** (RSC, Server Actions,
+> Route Handlers, CLIs) estabelecem o contexto uma vez — via `withUserContext` (usuario
+> logado, RLS) ou `withAdminContext` (service_role + `userId` explicito, para CLI/ETL);
+> o `getStore()` interno o le. **Assim as assinaturas de `readEntity`/`writeEntity`/
+> `listEntities` — e os 11 call sites — nao mudaram.** Ver §5.2 e ADR 0001 §3.
 
 Principios:
 
 - **Camada 3 concentra as regras de dominio** (validacao Zod, conflito por `revision`,
   `write_policy`, campos de sistema imutaveis, ordenacao canonica de chaves). A camada 4
-  so faz bytes/linhas entrar e sair.
-- **UI nunca toca `fs` nem `gray-matter` direto.** Sempre via camada 3.
+  so faz bytes/linhas (ou linhas de tabela) entrar e sair.
+- **UI nunca toca `fs`, `gray-matter` nem o cliente Supabase direto para conteudo.**
+  Sempre via camada 3.
 - **Agentes usam a camada 3 in-process** (import de `lib/content/repository`), exatamente
   como as Server Actions. A REST (camada 2, `app/api`) e opcional para agentes que rodam
   fora do processo Node do app (P1).
@@ -232,12 +265,15 @@ BusinessOS/
 │   │   ├── repository.ts          # readEntity/listEntities/writeEntity (regras)
 │   │   ├── errors.ts              # ConflictError/ValidationError/PolicyError/NotInRegistryError
 │   │   ├── labels.ts              # SECTION_LABEL / STATUS_LABEL (enum -> pt-BR)
+│   │   ├── context.ts             # ContentContext + AsyncLocalStorage (ADR 0001 §3)
+│   │   ├── session.ts             # withUserContext / withAdminContext / seedEntitiesForUser
 │   │   └── store/
 │   │       ├── types.ts           # interface ContentStore + RawDoc
-│   │       ├── file-store.ts      # FileContentStore (fs + gray-matter) — DEFAULT
-│   │       ├── supabase-store.ts  # FUTURO (stub documentado, nao usado)
-│   │       └── index.ts           # getStore(): seleciona por env CONTENT_STORE
-│   ├── config.ts                  # env validado por zod (secao 10)
+│   │       ├── file-store.ts      # FileContentStore (fs + gray-matter) — modo file
+│   │       ├── supabase-store.ts  # SupabaseContentStore (content_entities) — modo supabase
+│   │       └── index.ts           # getStore(): resolve pelo contexto de execucao
+│   ├── supabase/                  # clientes: client (browser) / server (RSC) / admin / middleware
+│   ├── config.ts                  # env validado por zod (secao 10) + AI_ENABLED
 │   └── utils.ts                   # cn() (clsx + tailwind-merge)
 │
 ├── content/                       # FONTE UNICA — 11 arquivos MD (02-content-model #3)
@@ -317,29 +353,55 @@ Usa `fs/promises` + `gray-matter`. Regras:
   `id` nao esteja no `REGISTRY` (a lista de verdade e o registro, nao o filesystem —
   `02-content-model.md#3`).
 
-### 5.2 Selecao do store
+### 5.2 Selecao do store — por CONTEXTO (ADR 0001 §3)
+
+> **Nota de atualizacao.** O `getStore()` deixou de ser um singleton global fixado por
+> env. Agora ele **resolve o store do contexto de execucao** (`AsyncLocalStorage`), que
+> ja vem escopado ao tenant certo. Sem contexto, so o modo `file` tem um store global
+> valido (dev/testes/seed local); no modo `supabase` sem contexto e **erro explicito** —
+> persistencia multi-tenant exige saber de quem sao os dados.
 
 ```ts
-// lib/content/store/index.ts
-import { FileContentStore } from './file-store';
-// import { SupabaseContentStore } from './supabase-store'; // FUTURO
-import type { ContentStore } from './types';
+// lib/content/store/index.ts (essencia)
 import { config } from '@/lib/config';
+import { getContext } from '../context';
+import { FileContentStore } from './file-store';
+import type { ContentStore } from './types';
 
-let store: ContentStore | null = null;
+let fileStore: FileContentStore | null = null;
+
 export function getStore(): ContentStore {
-  if (store) return store;
-  switch (config.CONTENT_STORE) {
-    case 'file':
-      store = new FileContentStore(config.CONTENT_ROOT);
-      break;
-    // case 'supabase': store = new SupabaseContentStore(...); break; // FUTURO
-    default:
-      throw new Error(`CONTENT_STORE invalido: ${config.CONTENT_STORE}`);
+  const ctx = getContext();
+  if (ctx) return ctx.store;                 // producao: store ja escopado ao tenant
+
+  if (config.CONTENT_STORE === 'file') {     // sem contexto: so o file-store global vale
+    if (!fileStore) fileStore = new FileContentStore(config.CONTENT_ROOT);
+    return fileStore;
   }
-  return store;
+  throw new Error('CONTENT_STORE=supabase exige um contexto de execucao (withUserContext / withAdminContext / runWithContext).');
 }
 ```
+
+Quem **estabelece** o contexto (`lib/content/session.ts`, server-only):
+
+```ts
+// UI (RSC / Server Actions / Route Handlers): resolve o usuario logado (cookies) e
+// roda com um SupabaseContentStore em modo RLS. No modo file, roda como founder.
+withUserContext<T>(fn: (user: SessionUser | null) => Promise<T>): Promise<T>
+
+// CLIs / ETL / onboarding: age como `userId` explicito via service_role (contorna RLS).
+withAdminContext<T>(userId: string, ownerEmail: string, fn: () => Promise<T>): Promise<T>
+
+// Cria as 11 entidades vazias do tenant do contexto atual (idempotente; reusa REGISTRY
+// + buildSeedFrontmatter). Roda DENTRO de um with*Context.
+seedEntitiesForUser(): Promise<{ created: number; skipped: number }>
+```
+
+O `SupabaseContentStore` (`lib/content/store/supabase-store.ts`) implementa `ContentStore`
+contra `content_entities` em **dois modos**: **RLS** (cliente `@supabase/ssr` autenticado,
+`user_id` cai no default `auth.uid()`) para a UI, e **admin** (cliente `service_role` +
+`actAsUserId` explicito) para CLI/ETL/seed. O conflito otimista e atomico no banco:
+`UPDATE ... WHERE revision = base` — 0 linhas numa linha existente => `ConflictError`.
 
 ---
 
@@ -465,8 +527,9 @@ export const runtime = 'nodejs';
 
 > A maioria das skills/agentes roda **in-process** e importa `lib/content/repository`
 > diretamente (contrato de `02-content-model.md#10.5`); a REST e so a ponte para atores
-> externos. Nao ha auth nesta fase (single-founder local); se exposta em rede, exigir
-> token — fora do escopo MVP.
+> externos. **Atualizacao (ADR 0001):** no modo `supabase` ha auth (Supabase Auth) e o
+> `middleware` protege as rotas; um Route Handler exposto a atores externos deve rodar
+> dentro de um `with*Context` para escopar o tenant (e, se exposto em rede, exigir token).
 
 ### 7.3 Seeder & validador (scripts)
 
@@ -556,70 +619,154 @@ label dialog sheet skeleton separator tooltip sonner`. `lib/utils.ts` traz `cn()
 `.env.local` (git-ignored) + `.env.example` versionado. Validacao por Zod em
 `lib/config.ts` (falha cedo no boot se algo faltar), sem lib extra de env.
 
-```bash
-# .env.example
-# --- Conteudo (ativo hoje) ---
-CONTENT_STORE=file                 # 'file' (default) | 'supabase' (futuro)
-CONTENT_ROOT=content               # raiz dos MD, relativo a cwd do processo
-FOUNDER_EMAIL=ruanbraz@overlens.com.br   # owner default no seed
+> **Nota de atualizacao (ADR 0001).** As vars Supabase deixaram de ser "futuras
+> comentadas": no modo `supabase` sao **obrigatorias** (validadas por um `.refine`).
+> Entraram tambem `SUPABASE_STORAGE_BUCKET` e `ANTHROPIC_API_KEY` (cabo solto da IA). Ver
+> `.env.example` versionado.
 
-# --- Supabase (FUTURO — documentado, NAO usado nesta fase) ---
-# NEXT_PUBLIC_SUPABASE_URL=
-# NEXT_PUBLIC_SUPABASE_ANON_KEY=
-# SUPABASE_SERVICE_ROLE_KEY=       # so server-side; nunca exposto ao client
+```bash
+# .env.example (resumo — ver o arquivo para os comentarios completos)
+# --- Conteudo / seletor de persistencia ---
+CONTENT_STORE=file                       # 'file' (default) | 'supabase' (producao)
+CONTENT_ROOT=content                     # raiz dos MD (modo file)
+FOUNDER_EMAIL=ruanbraz@overlens.com.br   # vira admin no signup; owner default no seed
+
+# --- Supabase (OBRIGATORIAS quando CONTENT_STORE=supabase) ---
+NEXT_PUBLIC_SUPABASE_URL=                 # vai ao browser (RLS por sessao)
+NEXT_PUBLIC_SUPABASE_ANON_KEY=           # vai ao browser (anon)
+SUPABASE_SERVICE_ROLE_KEY=               # SECRETA — so server-side (contorna RLS)
+
+# --- Storage / IA ---
+SUPABASE_STORAGE_BUCKET=attachments      # bucket privado de anexos (default)
+ANTHROPIC_API_KEY=                       # presenca LIGA a IA no runtime (AI_ENABLED)
 ```
 
 ```ts
-// lib/config.ts
+// lib/config.ts (essencia; SERVER-ONLY — le chaves secretas)
 import { z } from 'zod';
-const schema = z.object({
-  CONTENT_STORE: z.enum(['file', 'supabase']).default('file'),
-  CONTENT_ROOT: z.string().default('content'),
-  FOUNDER_EMAIL: z.string().email().default('ruanbraz@overlens.com.br'),
-});
+const schema = z
+  .object({
+    CONTENT_STORE: z.enum(['file', 'supabase']).default('file'),
+    CONTENT_ROOT: z.string().default('content'),
+    FOUNDER_EMAIL: z.email().default('ruanbraz@overlens.com.br'),
+    NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional(),
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1).optional(),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
+    ANTHROPIC_API_KEY: z.string().min(1).optional(),
+    SUPABASE_STORAGE_BUCKET: z.string().default('attachments'),
+  })
+  .refine(
+    (c) => c.CONTENT_STORE !== 'supabase' ||
+      (c.NEXT_PUBLIC_SUPABASE_URL && c.NEXT_PUBLIC_SUPABASE_ANON_KEY && c.SUPABASE_SERVICE_ROLE_KEY),
+    { message: 'CONTENT_STORE=supabase exige as 3 chaves Supabase.', path: ['CONTENT_STORE'] },
+  );
 export const config = schema.parse(process.env);
+export const AI_ENABLED = Boolean(config.ANTHROPIC_API_KEY); // cabo solto da IA
 ```
 
-Regras: nenhuma credencial no client; as vars Supabase ficam **comentadas** ate a fase
-futura. `NEXT_PUBLIC_*` so para o que precisa ir ao browser (nada nesta fase).
+Regras: **nenhuma credencial secreta no client** — `config`/`SUPABASE_SERVICE_ROLE_KEY`/
+`ANTHROPIC_API_KEY` sao server-only; o browser le so `NEXT_PUBLIC_*` (o Next inlina no
+bundle, ver `lib/supabase/client.ts`). As vars Supabase so sao exigidas quando
+`CONTENT_STORE=supabase` (o `.refine` falha cedo no boot se faltarem).
 
 ---
 
-## 11. Supabase como adapter FUTURO (documentar, nao implementar)
+## 11. Persistencia Supabase multi-tenant (IMPLEMENTADA — SUBSTITUI o plano futuro)
 
-O plano futuro NAO muda o contrato de dominio (camada 3). Troca-se **apenas a camada 4**:
+> **Esta secao foi SUBSTITUIDA pelo ADR 0001.** A redacao original previa Supabase como
+> troca de camada 4 **single-tenant e sem auth**. O que de fato foi implementado e
+> **maior**: multiusuario com autenticacao, RLS, storage e IA. O texto abaixo registra a
+> realidade; a fonte canonica da decisao e `docs/decisions/0001-persistencia-supabase-multitenant.md`.
 
-- Instalar (futuro): `@supabase/supabase-js`, `@supabase/ssr`.
-- **`SupabaseContentStore implements ContentStore`**: `read`/`list`/`write`/`exists`
-  contra uma tabela que **espelha o frontmatter** + coluna `body`:
+O contrato de dominio (camada 3) segue **intacto**: trocou-se a camada 4 e adicionou-se
+um contexto de tenant, sem mexer nas assinaturas nem nos 11 call sites.
+
+### 11.1 O que foi implementado
+
+- **`SupabaseContentStore implements ContentStore`** (`lib/content/store/supabase-store.ts`)
+  contra a tabela `content_entities`, que **espelha o frontmatter** (jsonb) + `body`, com
+  **uma copia por usuario**. Modos RLS (UI) e admin/`service_role` (CLI/ETL/seed).
+- **Multi-tenant por linha, isolado por RLS.** `content_entities` tem `user_id uuid` (FK
+  `auth.users`) e **PK composta `(user_id, entity_id)`**. Toda policy filtra por
+  `auth.uid()`. O `service_role` contorna a RLS para operacoes administrativas.
+- **Contexto de tenant via `AsyncLocalStorage`** (`lib/content/context.ts` +
+  `lib/content/session.ts`) — ver §2 e §5.2. E o que mantem as assinaturas de dominio
+  inalteradas.
+- **Autenticacao (Supabase Auth, email+senha)** via `@supabase/ssr` + `middleware.ts`
+  (refresh de sessao + protecao de rotas; ativo so no modo `supabase`). Tabela `profiles`
+  1:1 com `auth.users`, com `role` (`admin`|`member`) e trigger que provisiona o profile
+  no signup (founder -> `admin`; demais -> `member`). Signup self-service.
+- **Storage** (ADR §7): bucket privado `attachments` com policies RLS por usuario
+  (primeiro segmento do caminho = `auth.uid()`). Infra pronta; sem UI de upload ainda.
+- **IA integrada por "cabo solto"** (ADR §6): `AI_ENABLED` liga quando `ANTHROPIC_API_KEY`
+  existe. Provider via Vercel AI SDK + `@ai-sdk/anthropic`. A IA escreve pela **mesma
+  porta** (`repository` / `propose -> needs_review`).
+
+### 11.2 DDL efetiva (migration aplicada)
+
+`supabase/migrations/20260712104336_init_multitenant.sql` (essencia da tabela de conteudo):
 
 ```sql
--- FUTURO — esboco de DDL (nao aplicar agora)
-create table content_entities (
-  id              text primary key,              -- '<section>/<entity>'
-  section         text not null,
-  entity          text not null,
-  frontmatter     jsonb not null,                -- campos core + por-tipo
-  body            text not null default '',
-  revision        integer not null default 1,    -- lock otimista (mesmo do arquivo)
-  updated         timestamptz not null default now(),
-  created         timestamptz not null default now(),
-  unique (section, entity)
+create table public.content_entities (
+  user_id     uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  entity_id   text not null,                 -- '<section>/<entity>'
+  section     text not null,
+  frontmatter jsonb not null,                -- frontmatter completo (core + por-tipo)
+  body        text not null default '',
+  revision    integer not null default 1,    -- espelha frontmatter.revision (lock otimista)
+  created     timestamptz not null default now(),
+  updated     timestamptz not null default now(),
+  primary key (user_id, entity_id)           -- uma copia por usuario
 );
+-- RLS: select/insert/update/delete WHERE auth.uid() = user_id. Indice (user_id, section).
 ```
 
-- **Conflito otimista** vira `update ... set revision = revision + 1 where id = $1 and
-  revision = $baseRevision`; 0 linhas afetadas => `ConflictError`. Semantica **identica**
-  a do file store (rename atomico + checagem de `revision`).
-- **Escrita atomica** = a propria transacao/`update` condicional do Postgres.
-- Selecao por `CONTENT_STORE=supabase` (secao 5.2). O `repository` (camada 3) **nao muda
-  uma linha**: mesma validacao Zod, mesma politica, mesmos campos de sistema.
-- **Fora de escopo do futuro imediato**: auth/RLS, multiusuario, realtime — so entram se
-  o produto sair do modo single-founder local.
+- **Conflito otimista** = `UPDATE ... WHERE entity_id = $1 AND revision = $base` (+ filtro
+  de tenant no modo admin); 0 linhas numa linha existente => `ConflictError`. Semantica
+  **identica** a do file store (rename atomico + checagem de `revision`).
+- **Escrita atomica** = o proprio `UPDATE` condicional do Postgres.
+- Selecao por contexto (§5.2). O `repository` (camada 3) **nao muda uma linha**.
 
-> Consequencia de design: o frontmatter dos arquivos ja e o "schema da tabela". Migrar =
-> um script que le `content/**` via `FileContentStore` e escreve via `SupabaseContentStore`.
-> Nenhuma reescrita de UI ou de agentes.
+### 11.3 Admin semente e onboarding (ETL + seed)
+
+- **Admin (founder):** um **ETL** deve ler `content/**/*.md` via `FileContentStore` e
+  gravar no Supabase sob o `user_id` do admin (via `withAdminContext`), levando o conteudo
+  real de hoje para o banco. Os arquivos em `content/` permanecem no repo como semente
+  historica.
+- **Novos usuarios:** o trigger cria o `profiles` no signup; o **seed das 11 entidades
+  vazias** roda em TS (`seedEntitiesForUser`, reusa `REGISTRY` + `buildSeedFrontmatter`)
+  no primeiro acesso/onboarding — nada de `REGISTRY` duplicado em SQL.
+
+### 11.4 Estado da fiacao (verificado ponta a ponta)
+
+Tudo abaixo foi **implementado e verificado** no modo `supabase` (isolamento RLS provado
+com 2 tenants; ETL das 11 entidades para o admin; lock otimista/conflito no banco; build
+verde nos dois modos):
+
+- **Rotas de auth** — `app/(auth)/login`, `app/(auth)/signup`, `app/auth/signout`,
+  layout proprio e o `middleware.ts` (padrao `@supabase/ssr`) protegendo o grupo `(app)`.
+- **Script de ETL** — `scripts/migrate-to-supabase.ts` (`pnpm migrate:supabase`): le
+  `content/**` via `FileContentStore` e faz upsert em `content_entities` sob o admin,
+  preservando `revision`/`created`/`updated`/`status` 1:1. Idempotente.
+- **`seedEntitiesForUser`** — chamada no `signUp` (novo usuario recebe as 11 entidades
+  vazias). O admin recebe os dados reais via ETL.
+- **CLIs de agente** (`agent:read`/`agent:write`/`seed`) e `create-admin`/`migrate:supabase`
+  — embrulhados em `withAdminContext` (agem no tenant do admin, `service_role`). Rodam com
+  `--env-file-if-exists=.env.local --conditions=react-server` (o `--conditions` resolve o
+  `server-only`; o `--env-file` carrega o `.env.local`, que o `tsx` nao le sozinho).
+- **IA (cabo solto)** — `lib/ai/*`, `app/api/ai/fill` e os componentes `AskAi`/
+  `GenerateReport`/`GenerateBriefing` ligados ao runtime, sob `AI_ENABLED`. Sem a
+  `ANTHROPIC_API_KEY`, a UI degrada (botoes desabilitados + tooltip).
+- **Storage** — `lib/storage/*` (upload/signed-url/list/remove sob RLS da sessao); bucket
+  `attachments` privado, path `<uid>/...`. Sem UI de upload ainda (infra pronta).
+
+**Fora do escopo (seguem globais em `process.cwd()`, nao multi-tenant nesta fase — ADR,
+Consequencias):** heartbeat (`.businessos/`), leads (`data/leads.json`), agentes
+(`.claude/agents`).
+
+**Config de Auth pendente (operacional):** para o **self-service de novos usuarios** sem
+SMTP, desabilitar "Confirm email" no dashboard do Supabase (o admin ja e criado com e-mail
+confirmado via `service_role`, entao loga sem depender disso).
 
 ---
 
@@ -807,12 +954,14 @@ pnpm add -D @storybook/addon-vitest   # roda stories como testes (opcional)
 
 (`pnpm add -D tsx` para rodar os scripts TS diretamente.)
 
-### 14.8 Futuro — Supabase (NAO rodar agora)
+### 14.8 Supabase (JA INSTALADO — ADR 0001)
 
 ```bash
-# FUTURO, quando CONTENT_STORE=supabase entrar em cena:
-# pnpm add @supabase/supabase-js @supabase/ssr
-# implementar lib/content/store/supabase-store.ts (mesma interface ContentStore)
+# Ja instalado e em uso (nao re-rodar):
+# pnpm add @supabase/supabase-js @supabase/ssr ai @ai-sdk/anthropic server-only
+# lib/content/store/supabase-store.ts implementa ContentStore contra content_entities.
+# lib/supabase/{client,server,admin,middleware}.ts + lib/content/{context,session}.ts.
+# Migrations em supabase/migrations/ (aplicadas ao projeto). Ver §11 e ADR 0001.
 ```
 
 ---
@@ -839,15 +988,19 @@ pnpm add -D @storybook/addon-vitest   # roda stories como testes (opcional)
       `listEntities` no servidor (`runtime=nodejs`, `force-dynamic`).
 - [ ] Edicao por `[section]/[entity]` (pagina) — modal interceptado opcional.
 - [ ] `lib/content` completo: `schema`/`registry`/`serialize`/`repository`/`errors` +
-      `store/{types,file-store,index}`; UI e agentes so acessam por `repository`.
-- [ ] `ContentStore` isola a persistencia; `FileContentStore` com escrita atomica; stub
-      `supabase-store` documentado (nao instalado).
+      `context`/`session` + `store/{types,file-store,supabase-store,index}`; UI e agentes
+      so acessam por `repository`.
+- [ ] `ContentStore` isola a persistencia; `FileContentStore` com escrita atomica;
+      `SupabaseContentStore` ativo (RLS + admin) contra `content_entities` (ADR 0001).
+- [ ] Contexto de tenant (`AsyncLocalStorage`) via `withUserContext`/`withAdminContext`;
+      assinaturas de dominio e call sites inalterados.
+- [ ] Auth (Supabase Auth) + `middleware` de refresh/protecao no modo `supabase`.
 - [ ] Server Action `saveEntity` com `revalidatePath`, retornando conflito/validacao/policy.
 - [ ] View-toggle por URL `?view` + `localStorage` de preferencia; um unico `Select`.
 - [ ] Tailwind v3 + tokens/`globals.css`/`tailwind.config.ts` drop-in; Inter via `next/font`.
 - [ ] shadcn (new-york/neutral/cssVariables) com os componentes da secao 8.2.
 - [ ] Storybook com stories dos primitivos-chave + a11y + tema.
-- [ ] `.env.example` + `lib/config.ts` (zod); zero credencial Supabase ativa.
+- [ ] `.env.example` + `lib/config.ts` (zod) com vars Supabase/IA; segredos server-only.
 - [ ] Testes: unit (repository round-trip/conflito/policy), componentes, e2e (O1);
       `content:check` no CI (100% frontmatter valido).
 - [ ] Scaffold reprodutivel pelos comandos nao-interativos da secao 14.
@@ -863,5 +1016,7 @@ pnpm add -D @storybook/addon-vitest   # roda stories como testes (opcional)
   `writeEntity`, `ai_context`, fluxo `propose -> needs_review -> founder aprova`) e,
   opcionalmente, a REST da secao 7.2.
 - **Plano de QA** — expande a secao 13 (mapeamento CA-xx -> casos) em suite executavel.
-- **Plano de migracao Supabase (futuro)** — implementa `SupabaseContentStore` sobre a DDL
-  da secao 11 sem tocar as camadas 1–3.
+- **Persistencia Supabase multi-tenant (IMPLEMENTADA e verificada — ADR 0001)** —
+  `SupabaseContentStore` + contexto de tenant + auth/RLS/storage/IA, sem tocar as camadas
+  1–3 (§11). Fiacao ponta a ponta (rotas de auth, ETL, onboarding, CLIs em
+  `withAdminContext`, IA) concluida e verificada — ver §11.4.

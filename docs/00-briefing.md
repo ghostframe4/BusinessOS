@@ -69,10 +69,15 @@ Caracteristicas do publico:
 - A **camada de contexto compartilhado** para agentes de IA e skills, que leem/escrevem os mesmos arquivos.
 
 ### Nao e (nesta fase)
-- Nao tem banco de dados conectado. Persistencia = arquivos MD locais em `content/`.
+> **Atualizacao (ADR 0001, 2026-07-12):** os itens sobre "sem banco" e "Supabase futuro"
+> foram superados — a persistencia de producao agora e Supabase multi-tenant + auth. Ver
+> `docs/decisions/0001-persistencia-supabase-multitenant.md`.
+- ~~Nao tem banco de dados conectado.~~ (Superado — ADR 0001.) Persistencia de producao =
+  Postgres/Supabase; arquivos MD em `content/` seguem como modo `file`/semente historica.
 - Nao usa tabelas para exibir dados — usa cards.
 - Nao e um ERP/CRM completo (a entidade `erp` existe como *documento de contexto*, nao como modulo transacional).
-- Nao implementa Supabase agora — Supabase e citado como **camada de persistencia FUTURA** (ver docs de arquitetura; documentar, nao implementar).
+- ~~Nao implementa Supabase agora.~~ (Superado — ADR 0001.) Supabase deixou de ser
+  "camada de persistencia FUTURA": foi implementado (multi-tenant, RLS, auth, storage, IA).
 
 ### Modelo mental
 ```
@@ -176,8 +181,8 @@ Porque o contexto ja e estruturado (frontmatter) e legivel (Markdown), um agente
 | Fonte | **Inter** |
 | Design | Minimalista **preto & branco**, cantos arredondados, itens de sidebar com **hover background** |
 | Exibicao de dados | **Cards** (nao tabelas), com toggle **grid/lista** (um controle select) |
-| Persistencia (agora) | Arquivos **Markdown locais** em `content/` |
-| Persistencia (futuro) | **Supabase** — apenas documentar, **nao implementar** |
+| Persistencia (producao) | **Postgres/Supabase** multi-tenant + auth (RLS) — ADR 0001 |
+| Persistencia (dev/fallback) | Arquivos **Markdown locais** em `content/` (modo `file`) |
 
 Idioma do produto e da documentacao: **portugues do Brasil** (termos tecnicos e identificadores permanecem em ingles).
 
@@ -185,8 +190,14 @@ Idioma do produto e da documentacao: **portugues do Brasil** (termos tecnicos e 
 
 ## 9. Nao-Objetivos (nesta fase)
 
-- **Sem banco de dados conectado.** Nada de Postgres/Supabase rodando; persistencia e em arquivo.
-- **Sem autenticacao / multiusuario.** Produto e single-founder local por ora.
+> **Superado pelo ADR 0001 (2026-07-12).** Os dois primeiros nao-objetivos abaixo nao
+> valem mais: ha banco (Supabase) e auth multi-tenant em producao; o modo `file` segue
+> como fallback. Ver `docs/decisions/0001-persistencia-supabase-multitenant.md`.
+
+- ~~**Sem banco de dados conectado.**~~ (Superado — ADR 0001.) Postgres/Supabase e a
+  persistencia de producao; o modo `file` (arquivo) permanece para dev/testes.
+- ~~**Sem autenticacao / multiusuario.**~~ (Superado — ADR 0001.) Multiusuario com auth
+  (Supabase Auth) e isolamento por tenant (RLS).
 - **Sem tabelas** como padrao de exibicao — cards sempre.
 - **Sem ERP/CRM transacional.** `erp` e `fluxo-de-caixa` sao documentos de contexto, nao modulos com lancamentos operacionais.
 - **Sem execucao autonoma sem revisao.** Agentes propoem; o founder aprova via UI.
@@ -225,7 +236,7 @@ O BusinessOS esta cumprindo sua visao quando:
 | **Skill** | Capacidade reutilizavel invocavel que opera sobre o substrato de arquivos MD (ex.: gerar/auditar/sintetizar uma entidade). |
 | **content/** | Diretorio raiz onde os arquivos MD do negocio sao persistidos localmente. |
 | **Toggle grid/lista** | Controle select unico que alterna a exibicao dos cards entre grade e lista. |
-| **Supabase (futuro)** | Camada de persistencia planejada para o futuro; documentada, nao implementada nesta fase. |
+| **Supabase** | Camada de persistencia de producao (Postgres + Auth + Storage), multi-tenant com RLS. Implementada no ADR 0001; o modo `file` (arquivos MD) segue como fallback de dev/testes. |
 | **ICP** | Ideal Customer Profile — o perfil ideal de cliente (entidade `perfil-ideal-de-cliente`). |
 | **Oferta (direcao vs validacao)** | Entidade que existe em duas secoes como arquivos distintos: `direcao/oferta.md` (tese) e `validacao/oferta.md` (evidencia validada). |
 

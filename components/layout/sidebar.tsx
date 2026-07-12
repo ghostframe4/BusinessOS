@@ -1,7 +1,8 @@
 import type { LucideIcon } from "lucide-react";
-import { Compass, FlaskConical, User, Wallet } from "lucide-react";
+import { Bot, Compass, FlaskConical, KanbanSquare, Sparkles, Target, User, Users, Wallet } from "lucide-react";
 
 import { NavItem } from "@/components/layout/nav-item";
+import { UserMenu } from "@/components/layout/user-menu";
 import { SECTION_LABEL } from "@/lib/content/labels";
 import type { Section } from "@/lib/content/schema";
 import { sectionEnum } from "@/lib/content/schema";
@@ -18,6 +19,8 @@ const SECTION_ICON: Record<Section, LucideIcon> = {
 export interface SidebarProps {
   /** Seção atualmente ativa (destacada na nav). */
   activeSection?: Section;
+  /** Segmento cru da rota (ex.: "agentes") — destaca itens fora do enum de seções. */
+  activeSegment?: string;
   className?: string;
 }
 
@@ -29,11 +32,17 @@ export interface SidebarProps {
  * Server component: marca com acento limão, navegação das 4 seções (na ordem
  * canônica do `sectionEnum`) e rodapé com meta. Recebe a seção ativa via prop.
  */
-export function Sidebar({ activeSection, className }: SidebarProps) {
+export function Sidebar({
+  activeSection,
+  activeSegment,
+  className,
+}: SidebarProps) {
   return (
     <aside
       className={cn(
-        "sticky top-0 h-dvh w-[--sidebar-width] shrink-0 p-3",
+        // z-20 mantém a sidebar por cima da "gaveta" de conversas (z-10),
+        // que desliza por baixo dela na página Principal.
+        "sticky top-0 z-20 h-dvh w-[--sidebar-width] shrink-0 p-3",
         className,
       )}
     >
@@ -49,8 +58,17 @@ export function Sidebar({ activeSection, className }: SidebarProps) {
           <span className="text-base font-bold tracking-tight">BusinessOS</span>
         </div>
 
-        <nav aria-label="Seções" className="flex-1 space-y-1">
-          <p className="px-3 pb-2 pt-3 text-xs font-semibold uppercase tracking-[0.08em] text-sidebar-muted">
+        <nav aria-label="Navegação" className="flex-1 space-y-1">
+          {/* Item de destaque: a página Principal (chat com IA). Fica no topo,
+              logo abaixo da marca e antes do grupo "Seções". */}
+          <NavItem
+            href="/principal"
+            label="Principal"
+            icon={Sparkles}
+            active={activeSegment === "principal"}
+          />
+
+          <p className="px-3 pb-2 pt-5 text-xs font-semibold uppercase tracking-[0.08em] text-sidebar-muted">
             Seções
           </p>
           {sectionEnum.options.map((section) => (
@@ -62,11 +80,38 @@ export function Sidebar({ activeSection, className }: SidebarProps) {
               active={section === activeSection}
             />
           ))}
+
+          <p className="px-3 pb-2 pt-5 text-xs font-semibold uppercase tracking-[0.08em] text-sidebar-muted">
+            Sistema
+          </p>
+          <NavItem
+            href="/leads"
+            label="Leads"
+            icon={Users}
+            active={activeSegment === "leads"}
+          />
+          <NavItem
+            href="/oportunidades"
+            label="Oportunidades"
+            icon={Target}
+            active={activeSegment === "oportunidades"}
+          />
+          <NavItem
+            href="/workflow"
+            label="Workflow"
+            icon={KanbanSquare}
+            active={activeSegment === "workflow"}
+          />
+          <NavItem
+            href="/agentes"
+            label="Agentes"
+            icon={Bot}
+            active={activeSegment === "agentes"}
+          />
         </nav>
 
-        <footer className="shrink-0 border-t border-sidebar-border px-2 pt-4 text-xs text-sidebar-muted">
-          <p className="font-medium text-sidebar-foreground">BusinessOS</p>
-          <p>v1.0.0 · conteúdo local</p>
+        <footer className="shrink-0 border-t border-sidebar-border pt-4 text-xs text-sidebar-muted">
+          <UserMenu />
         </footer>
       </div>
     </aside>

@@ -37,6 +37,52 @@ export interface AiContext {
   instructions?: string;
 }
 
+/**
+ * Um KPI do relatorio: um numero/fato de destaque com sua natureza e fonte.
+ * `kind: 'fact'` = dado externo verificavel (exige `source`, uma URL confiavel);
+ * `kind: 'goal'` = meta/expectativa do proprio negocio (rotulada como tal na UI).
+ * Gerado por agentes de pesquisa (`report`) ou derivado de campos por-tipo.
+ */
+export interface ReportKpi {
+  /** Rotulo curto do indicador (ex.: "Mercado LatAm", "Meta de membros"). */
+  label: string;
+  /** Valor formatado, como texto (ex.: "US$ 4,2 bi", "100 mil", "R$ 10 mil/mes"). */
+  value: string;
+  /** `fact` = fato externo com fonte; `goal` = meta/expectativa do negocio. */
+  kind: "fact" | "goal";
+  /** URL da fonte (obrigatoria em `fact`): de onde veio o dado. */
+  source?: string;
+  /** Nome legivel da fonte (ex.: "IMARC 2024") para exibir no lugar da URL crua. */
+  source_label?: string;
+  /** Nota curta de contexto (ex.: "CAGR ~20,7%", "ate 2033"). */
+  note?: string;
+}
+
+/** Um insight do relatorio: uma leitura/conclusao curta, opcionalmente com fonte. */
+export interface ReportInsight {
+  /** O insight em uma frase (o "e dai" acionavel). */
+  text: string;
+  /** URL de apoio, se o insight se ancora num dado externo. */
+  source?: string;
+  /** Nome legivel da fonte. */
+  source_label?: string;
+}
+
+/**
+ * Bloco de relatorio de uma entidade (docs/02 — campo transversal opcional).
+ * Curado por agentes de pesquisa: KPIs (fatos com fonte + metas) e insights.
+ * A UI (EntityReport) renderiza isto como a camada de "dados"; ausente => a
+ * visualizacao usa apenas o editorial + campos por-tipo do frontmatter.
+ */
+export interface Report {
+  /** Data ISO em que o relatorio foi gerado/atualizado pelo agente. */
+  generated_at?: string;
+  /** Slug do agente que gerou (sem o prefixo `agent:`). */
+  generated_by?: string;
+  kpis: ReportKpi[];
+  insights: ReportInsight[];
+}
+
 /** Campos core presentes em toda entidade. Campos por-tipo entram via extensao. */
 export interface Frontmatter {
   id: `${Section}/${string}`;
@@ -54,6 +100,8 @@ export interface Frontmatter {
   last_edited_by: Editor;
   ai_context: AiContext;
   schema_version: 1;
+  /** Bloco de relatorio (KPIs + insights), transversal e opcional. */
+  report?: Report;
   // Campos por-tipo (opcionais) — ver docs/02 §8.2 / entity-extensions.ts:
   [key: string]: unknown;
 }
@@ -110,6 +158,28 @@ export const aiContextSchema = z.object({
   instructions: z.string().optional(),
 });
 
+export const reportKpiSchema = z.object({
+  label: z.string().min(1),
+  value: z.string().min(1),
+  kind: z.enum(["fact", "goal"]),
+  source: z.url().optional(),
+  source_label: z.string().optional(),
+  note: z.string().optional(),
+});
+
+export const reportInsightSchema = z.object({
+  text: z.string().min(1),
+  source: z.url().optional(),
+  source_label: z.string().optional(),
+});
+
+export const reportSchema = z.object({
+  generated_at: z.string().optional(),
+  generated_by: z.string().optional(),
+  kpis: z.array(reportKpiSchema),
+  insights: z.array(reportInsightSchema),
+});
+
 /**
  * Schema base (campos core). `.catchall(z.unknown())` (zod v4) deixa os campos
  * por-tipo passarem; a validacao dos campos por-tipo vem da extensao por-id
@@ -132,6 +202,7 @@ export const frontmatterSchema = z
     last_edited_by: editorSchema,
     ai_context: aiContextSchema,
     schema_version: z.literal(1),
+    report: reportSchema.optional(),
   })
   .catchall(z.unknown())
   .refine((d) => d.id === `${d.section}/${d.entity}`, {
